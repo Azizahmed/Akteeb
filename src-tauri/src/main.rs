@@ -1,8 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::{Manager, State};
+use tauri::menu::MenuBuilder;
+use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
+use tauri::{Manager, State, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use typr_lib::audio;
@@ -16,7 +19,12 @@ struct AppState {
     recorder: Recorder,
     settings: Mutex<Settings>,
     app_dir: PathBuf,
+    is_quitting: AtomicBool,
 }
+
+const MAIN_WINDOW_LABEL: &str = "main";
+const TRAY_SHOW_ID: &str = "tray_show";
+const TRAY_QUIT_ID: &str = "tray_quit";
 
 fn get_app_dir() -> PathBuf {
     dirs::config_dir()
@@ -202,6 +210,21 @@ fn update_global_shortcut(
     Ok(())
 }
 
+fn show_main_window(app: &tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .ok_or_else(|| "Main window not found".to_string())?;
+
+    let _ = window.unminimize();
+    window
+        .show()
+        .map_err(|e| format!("Failed to show main window: {}", e))?;
+    window
+        .set_focus()
+        .map_err(|e| format!("Failed to focus main window: {}", e))?;
+    Ok(())
+}
+
 fn main() {
     let app_dir = get_app_dir();
     let settings = Settings::load(&app_dir);
@@ -214,6 +237,7 @@ fn main() {
             recorder: Recorder::new(),
             settings: Mutex::new(settings),
             app_dir,
+            is_quitting: AtomicBool::new(false),
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
@@ -225,6 +249,25 @@ fn main() {
             toggle_recording,
             test_groq_connection,
         ])
+        .on_window_event(|window, event| {
+            if window.label() != MAIN_WINDOW_LABEL {
+                return;
+            }
+
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let state = window.state::<AppState>();
+                if state.is_quitting.load(Ordering::Relaxed) {
+                    return;
+                }
+
+                api.prevent_close();
+
+                // Closing the main window hides the app so it keeps running from the tray.
+                if let Err(error) = window.hide() {
+                    eprintln!("[Typr] Failed to hide main window: {}", error);
+                }
+            }
+        })
         .setup(move |app| {
             println!("[Typr] Registering global shortcut: {}", initial_hotkey);
 
@@ -232,6 +275,51 @@ fn main() {
                 Ok(_) => println!("[Typr] Global shortcut registered successfully"),
                 Err(e) => eprintln!("[Typr] ERROR: Failed to register global shortcut: {}", e),
             }
+
+            let tray_menu = MenuBuilder::new(app)
+                .text(TRAY_SHOW_ID, "Open Typr")
+                .separator()
+                .text(TRAY_QUIT_ID, "Quit")
+                .build()?;
+
+            let mut tray_builder = TrayIconBuilder::with_id("main-tray")
+                .menu(&tray_menu)
+                .tooltip("Typr")
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    TRAY_SHOW_ID => {
+                        if let Err(error) = show_main_window(app) {
+                            eprintln!("[Typr] Failed to open from tray: {}", error);
+                        }
+                    }
+                    TRAY_QUIT_ID => {
+                        let state = app.state::<AppState>();
+                        state.is_quitting.store(true, Ordering::Relaxed);
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| match event {
+                    TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        ..
+                    }
+                    | TrayIconEvent::DoubleClick {
+                        button: MouseButton::Left,
+                        ..
+                    } => {
+                        if let Err(error) = show_main_window(tray.app_handle()) {
+                            eprintln!("[Typr] Failed to show window from tray click: {}", error);
+                        }
+                    }
+                    _ => {}
+                });
+
+            if let Some(icon) = app.default_window_icon().cloned() {
+                tray_builder = tray_builder.icon(icon);
+            }
+
+            tray_builder.build(app)?;
 
             Ok(())
         })
