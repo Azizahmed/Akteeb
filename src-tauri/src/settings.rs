@@ -3,13 +3,18 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct Settings {
     pub microphone: String,
     pub engine: String,
     #[serde(rename = "whisperModel")]
     pub whisper_model: String,
+    #[serde(rename = "transcriptionLanguage")]
+    pub transcription_language: String,
     #[serde(rename = "groqApiKey")]
     pub groq_api_key: String,
+    #[serde(rename = "groqModel")]
+    pub groq_model: String,
     #[serde(rename = "recordingMode")]
     pub recording_mode: String,
     pub hotkey: String,
@@ -21,7 +26,9 @@ impl Default for Settings {
             microphone: "default".to_string(),
             engine: "local".to_string(),
             whisper_model: "small".to_string(),
+            transcription_language: "mixed".to_string(),
             groq_api_key: String::new(),
+            groq_model: "whisper-large-v3".to_string(),
             recording_mode: "toggle".to_string(),
             hotkey: "CmdOrCtrl+Shift+Space".to_string(),
         }
@@ -60,7 +67,9 @@ mod tests {
         assert_eq!(settings.microphone, "default");
         assert_eq!(settings.engine, "local");
         assert_eq!(settings.whisper_model, "small");
+        assert_eq!(settings.transcription_language, "mixed");
         assert_eq!(settings.groq_api_key, "");
+        assert_eq!(settings.groq_model, "whisper-large-v3");
         assert_eq!(settings.recording_mode, "toggle");
         assert_eq!(settings.hotkey, "CmdOrCtrl+Shift+Space");
     }
@@ -72,13 +81,17 @@ mod tests {
 
         let mut settings = Settings::default();
         settings.engine = "cloud".to_string();
+        settings.transcription_language = "auto".to_string();
         settings.groq_api_key = "test-key-123".to_string();
+        settings.groq_model = "whisper-large-v3-turbo".to_string();
 
         settings.save(&dir).unwrap();
         let loaded = Settings::load(&dir);
 
         assert_eq!(loaded.engine, "cloud");
+        assert_eq!(loaded.transcription_language, "auto");
         assert_eq!(loaded.groq_api_key, "test-key-123");
+        assert_eq!(loaded.groq_model, "whisper-large-v3-turbo");
 
         let _ = fs::remove_dir_all(&dir);
     }

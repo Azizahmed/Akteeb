@@ -11,7 +11,20 @@
   </head>
   <body>
     <div id="app">
-      <div id="titlebar" data-tauri-drag-region></div>
+      <div id="titlebar" data-tauri-drag-region>
+        <div id="titlebar-meter" class="titlebar-meter idle" aria-hidden="true">
+          <div class="meter-shell">
+            <span class="meter-dot"></span>
+            <div class="meter-bars">
+              <span class="meter-bar"></span>
+              <span class="meter-bar"></span>
+              <span class="meter-bar"></span>
+              <span class="meter-bar"></span>
+              <span class="meter-bar"></span>
+            </div>
+          </div>
+        </div>
+      </div>
       <div id="app-body">
       <aside id="sidebar">
         <div class="sidebar-header">
@@ -106,16 +119,53 @@
                 </div>
               </div>
             </div>
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-text">Speech Language Mode</span>
+                <span class="label-hint">Use Mixed for Arabic + English in the same sentence. Transcription stays in the spoken language and is not translated.</span>
+              </div>
+              <div class="setting-control">
+                <select id="language-select">
+                  <option value="mixed">Arabic + English (Mixed)</option>
+                  <option value="ar">Arabic Only</option>
+                  <option value="en">English</option>
+                  <option value="auto">Auto Detect</option>
+                </select>
+              </div>
+            </div>
             <div id="download-progress" class="hidden">
               <div id="progress-bar"><div id="progress-fill"></div></div>
             </div>
-            <div class="setting-row hidden" id="cloud-settings">
-              <div class="setting-label">
-                <span class="label-text">Groq API Key</span>
-                <span class="label-hint">Get your key from console.groq.com</span>
+            <div id="cloud-settings" class="hidden">
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="label-text">Groq API Key</span>
+                  <span class="label-hint">Stored locally for Groq transcription requests</span>
+                </div>
+                <div class="setting-control">
+                  <input type="password" id="groq-key" placeholder="gsk_..." />
+                </div>
               </div>
-              <div class="setting-control">
-                <input type="password" id="groq-key" placeholder="gsk_..." />
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="label-text">Groq Model ID</span>
+                  <span class="label-hint">Enter the exact Groq transcription model id you want to use</span>
+                </div>
+                <div class="setting-control">
+                  <input type="text" id="groq-model" placeholder="whisper-large-v3" />
+                </div>
+              </div>
+              <div class="setting-row setting-row-final">
+                <div class="setting-label">
+                  <span class="label-text">Connection Test</span>
+                  <span class="label-hint">Checks that the API key works and the model id exists on Groq</span>
+                </div>
+                <div class="setting-control stack-control">
+                  <div class="inline-actions">
+                    <button id="groq-test-btn" class="btn-primary">Test Connection</button>
+                  </div>
+                  <div id="groq-test-status" class="status-message">Use this after entering your API key and model.</div>
+                </div>
               </div>
             </div>
           </div>
@@ -144,8 +194,19 @@
                 <span class="label-text">Hotkey</span>
                 <span class="label-hint">Global keyboard shortcut to trigger recording</span>
               </div>
-              <div class="setting-control">
-                <kbd id="hotkey-text">Cmd+Shift+D</kbd>
+              <div class="setting-control stack-control">
+                <div class="inline-actions hotkey-summary">
+                  <kbd id="hotkey-text">Cmd+Shift+D</kbd>
+                  <button id="hotkey-change-btn" class="btn-secondary">Change</button>
+                </div>
+                <div id="hotkey-capture-panel" class="hotkey-capture hidden" tabindex="0">
+                  <kbd id="hotkey-preview" class="hotkey-preview hotkey-empty">No shortcut captured yet</kbd>
+                  <div class="inline-actions">
+                    <button id="hotkey-confirm-btn" class="btn-primary" disabled>Confirm</button>
+                    <button id="hotkey-cancel-btn" class="btn-ghost">Cancel</button>
+                  </div>
+                  <div id="hotkey-capture-hint" class="status-message">Press a modifier plus one key, then confirm.</div>
+                </div>
               </div>
             </div>
           </div>

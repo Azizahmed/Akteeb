@@ -6,7 +6,9 @@ interface Settings {
   microphone: string;
   engine: string;
   whisperModel: string;
+  transcriptionLanguage: string;
   groqApiKey: string;
+  groqModel: string;
   recordingMode: string;
   hotkey: string;
 }
@@ -22,7 +24,6 @@ interface DownloadProgress {
   percent: number;
 }
 
-// DOM elements
 const statusDot = document.getElementById("status-dot")!;
 const statusText = document.getElementById("status-text")!;
 const micSelect = document.getElementById("mic-select") as HTMLSelectElement;
@@ -31,74 +32,108 @@ const engineCloud = document.getElementById("engine-cloud")!;
 const localSettings = document.getElementById("local-settings")!;
 const cloudSettings = document.getElementById("cloud-settings")!;
 const modelSelect = document.getElementById("model-select") as HTMLSelectElement;
-const downloadBtn = document.getElementById("download-btn")!;
+const languageSelect = document.getElementById("language-select") as HTMLSelectElement;
+const downloadBtn = document.getElementById("download-btn") as HTMLButtonElement;
 const downloadProgress = document.getElementById("download-progress")!;
 const progressFill = document.getElementById("progress-fill")!;
 const groqKey = document.getElementById("groq-key") as HTMLInputElement;
+const groqModel = document.getElementById("groq-model") as HTMLInputElement;
+const groqTestBtn = document.getElementById("groq-test-btn") as HTMLButtonElement;
+const groqTestStatus = document.getElementById("groq-test-status")!;
 const modeToggle = document.getElementById("mode-toggle")!;
 const modePtt = document.getElementById("mode-ptt")!;
 const hotkeyText = document.getElementById("hotkey-text")!;
+const hotkeyChangeBtn = document.getElementById("hotkey-change-btn") as HTMLButtonElement;
+const hotkeyCapturePanel = document.getElementById("hotkey-capture-panel")!;
+const hotkeyPreview = document.getElementById("hotkey-preview")!;
+const hotkeyCaptureHint = document.getElementById("hotkey-capture-hint")!;
+const hotkeyConfirmBtn = document.getElementById("hotkey-confirm-btn") as HTMLButtonElement;
+const hotkeyCancelBtn = document.getElementById("hotkey-cancel-btn") as HTMLButtonElement;
 
-// Section navigation
 const navItems = document.querySelectorAll(".nav-item");
 const sections = document.querySelectorAll(".content-section");
-
-navItems.forEach((item) => {
-  item.addEventListener("click", () => {
-    const target = item.getAttribute("data-section");
-    navItems.forEach((n) => n.classList.remove("active"));
-    sections.forEach((s) => s.classList.remove("active"));
-    item.classList.add("active");
-    document.getElementById(`section-${target}`)?.classList.add("active");
-  });
-});
-
-// Window drag — titlebar and sidebar empty space
 const titlebar = document.getElementById("titlebar")!;
+const titlebarMeter = document.getElementById("titlebar-meter")!;
 const sidebar = document.getElementById("sidebar")!;
 const appWindow = getCurrentWindow();
 
-titlebar.addEventListener("mousedown", (e) => {
-  if ((e.target as HTMLElement).closest("button, select, input, a, .nav-item")) return;
-  appWindow.startDragging();
-});
-
-sidebar.addEventListener("mousedown", (e) => {
-  if ((e.target as HTMLElement).closest("button, select, input, a, .nav-item")) return;
-  appWindow.startDragging();
-});
-
 let currentSettings: Settings;
+let pendingHotkey: string | null = null;
+let isCapturingHotkey = false;
+const activeModifiers = new Set<string>();
+let currentRecordingState = "Ready";
 
-async function loadSettings() {
-  currentSettings = await invoke<Settings>("get_settings");
+const modifierCodes = new Set([
+  "ShiftLeft",
+  "ShiftRight",
+  "ControlLeft",
+  "ControlRight",
+  "AltLeft",
+  "AltRight",
+  "MetaLeft",
+  "MetaRight",
+]);
 
-  // Populate mic dropdown
-  const mics = await invoke<MicDevice[]>("list_microphones");
-  micSelect.innerHTML = "";
-  mics.forEach((mic) => {
-    const option = document.createElement("option");
-    option.value = mic.name;
-    option.textContent = mic.name + (mic.is_default ? " (default)" : "");
-    micSelect.appendChild(option);
-  });
-  micSelect.value = currentSettings.microphone;
+function formatHotkeyLabel(hotkey: string) {
+  return hotkey
+    .replace(/CommandOrControl|CommandOrCtrl|CmdOrCtrl/gi, navigator.userAgent.toLowerCase().includes("mac") ? "Cmd" : "Ctrl")
+    .replace(/Command/gi, "Cmd")
+    .replace(/Control/gi, "Ctrl")
+    .replace(/Key([A-Z])/g, "$1")
+    .replace(/Digit([0-9])/g, "$1")
+    .replace(/Arrow/g, "")
+    .replace(/\+/g, " + ");
+}
 
-  // Engine
-  setEngine(currentSettings.engine);
+function setStatus(state: string) {
+  currentRecordingState = state;
+  statusDot.className = "";
+  if (state === "Recording") {
+    statusDot.classList.add("recording");
+    statusText.textContent = "Recording...";
+    titlebarMeter.classList.remove("idle", "transcribing");
+    titlebarMeter.classList.add("recording");
+    return;
+  }
 
-  // Model
-  modelSelect.value = currentSettings.whisperModel;
-  await checkModelStatus();
+  if (state === "Transcribing") {
+    statusDot.classList.add("transcribing");
+    statusText.textContent = "Transcribing...";
+    titlebarMeter.style.setProperty("--level", "0.08");
+    titlebarMeter.classList.remove("idle", "recording", "speaking");
+    titlebarMeter.classList.add("transcribing");
+    return;
+  }
 
-  // Groq key
-  groqKey.value = currentSettings.groqApiKey;
+  statusDot.classList.add("ready");
+  statusText.textContent = "Ready";
+  titlebarMeter.style.setProperty("--level", "0.06");
+  titlebarMeter.classList.remove("recording", "transcribing", "speaking");
+  titlebarMeter.classList.add("idle");
+}
 
-  // Recording mode
-  setRecordingMode(currentSettings.recordingMode);
+function setTitlebarMeterLevel(level: number) {
+  const clampedLevel = Math.max(0, Math.min(1, level));
+  const visualLevel =
+    currentRecordingState === "Recording"
+      ? Math.max(0.08, clampedLevel)
+      : Math.max(0.06, clampedLevel * 0.35);
 
-  // Hotkey
-  hotkeyText.textContent = currentSettings.hotkey.replace("CmdOrCtrl", "Cmd");
+  titlebarMeter.style.setProperty("--level", visualLevel.toFixed(3));
+
+  if (currentRecordingState !== "Recording") {
+    titlebarMeter.classList.remove("speaking");
+    return;
+  }
+
+  titlebarMeter.classList.toggle("speaking", clampedLevel > 0.12);
+}
+
+function setInlineStatus(element: HTMLElement, message: string, tone: "neutral" | "success" | "error" = "neutral") {
+  element.textContent = message;
+  element.classList.remove("status-success", "status-error");
+  if (tone === "success") element.classList.add("status-success");
+  if (tone === "error") element.classList.add("status-error");
 }
 
 function setEngine(engine: string) {
@@ -115,88 +150,391 @@ function setRecordingMode(mode: string) {
   modePtt.classList.toggle("active", mode === "push-to-talk");
 }
 
+function normalizeLanguageMode(language: string) {
+  if (!language || language === "auto") {
+    return "mixed";
+  }
+
+  return language;
+}
+
+function setHotkeyPreview(hotkey: string | null, message?: string, tone: "neutral" | "success" | "error" = "neutral") {
+  hotkeyPreview.textContent = hotkey ? formatHotkeyLabel(hotkey) : "No shortcut captured yet";
+  hotkeyPreview.classList.toggle("hotkey-empty", !hotkey);
+  setInlineStatus(hotkeyCaptureHint, message ?? "Press a modifier plus one key, then confirm.", tone);
+}
+
+function beginHotkeyCapture() {
+  pendingHotkey = null;
+  isCapturingHotkey = true;
+  activeModifiers.clear();
+  hotkeyCapturePanel.classList.remove("hidden");
+  hotkeyChangeBtn.classList.add("active");
+  hotkeyConfirmBtn.disabled = true;
+  hotkeyChangeBtn.blur();
+  hotkeyCapturePanel.focus();
+  setHotkeyPreview(null, "Listening for your shortcut...", "neutral");
+}
+
+function stopHotkeyCapture() {
+  isCapturingHotkey = false;
+  activeModifiers.clear();
+  hotkeyChangeBtn.classList.remove("active");
+}
+
+function cancelHotkeyCapture() {
+  pendingHotkey = null;
+  stopHotkeyCapture();
+  hotkeyCapturePanel.classList.add("hidden");
+  setHotkeyPreview(null);
+}
+
+function mapKeyboardCode(code: string) {
+  if (code.startsWith("Key")) return code;
+  if (code.startsWith("Digit")) return code;
+  if (/^F\d{1,2}$/.test(code)) return code;
+
+  const supported: Record<string, string> = {
+    Backquote: "Backquote",
+    Backslash: "Backslash",
+    BracketLeft: "BracketLeft",
+    BracketRight: "BracketRight",
+    Comma: "Comma",
+    Period: "Period",
+    Minus: "Minus",
+    Equal: "Equal",
+    Quote: "Quote",
+    Semicolon: "Semicolon",
+    Slash: "Slash",
+    Space: "Space",
+    Enter: "Enter",
+    Tab: "Tab",
+    Escape: "Escape",
+    Backspace: "Backspace",
+    Delete: "Delete",
+    Insert: "Insert",
+    Home: "Home",
+    End: "End",
+    PageUp: "PageUp",
+    PageDown: "PageDown",
+    ArrowUp: "ArrowUp",
+    ArrowDown: "ArrowDown",
+    ArrowLeft: "ArrowLeft",
+    ArrowRight: "ArrowRight",
+    CapsLock: "CapsLock",
+    Pause: "Pause",
+    PrintScreen: "PrintScreen",
+    ScrollLock: "ScrollLock",
+    NumLock: "NumLock",
+    Numpad0: "Numpad0",
+    Numpad1: "Numpad1",
+    Numpad2: "Numpad2",
+    Numpad3: "Numpad3",
+    Numpad4: "Numpad4",
+    Numpad5: "Numpad5",
+    Numpad6: "Numpad6",
+    Numpad7: "Numpad7",
+    Numpad8: "Numpad8",
+    Numpad9: "Numpad9",
+    NumpadAdd: "NumpadAdd",
+    NumpadSubtract: "NumpadSubtract",
+    NumpadMultiply: "NumpadMultiply",
+    NumpadDivide: "NumpadDivide",
+    NumpadDecimal: "NumpadDecimal",
+    NumpadEnter: "NumpadEnter",
+  };
+
+  return supported[code] ?? null;
+}
+
+function buildShortcutFromEvent(event: KeyboardEvent) {
+  const keyToken = mapKeyboardCode(event.code);
+  const modifiers: string[] = [];
+
+  if (event.metaKey) modifiers.push("Command");
+  if (event.ctrlKey) modifiers.push("Ctrl");
+  if (event.altKey) modifiers.push("Alt");
+  if (event.shiftKey) modifiers.push("Shift");
+
+  if (!keyToken || modifierCodes.has(event.code)) return null;
+  if (modifiers.length === 0) return null;
+
+  return [...modifiers, keyToken].join("+");
+}
+
+function getModifierLabel(code: string) {
+  switch (code) {
+    case "MetaLeft":
+    case "MetaRight":
+      return "Command";
+    case "ControlLeft":
+    case "ControlRight":
+      return "Ctrl";
+    case "AltLeft":
+    case "AltRight":
+      return "Alt";
+    case "ShiftLeft":
+    case "ShiftRight":
+      return "Shift";
+    default:
+      return null;
+  }
+}
+
 async function checkModelStatus() {
   const downloaded = await invoke<boolean>("check_model_downloaded", {
     modelSize: modelSelect.value,
   });
   downloadBtn.textContent = downloaded ? "\u2713" : "Download";
-  (downloadBtn as HTMLButtonElement).disabled = downloaded;
+  downloadBtn.disabled = downloaded;
 }
 
 async function saveSettings() {
+  if (!currentSettings) return;
   currentSettings.microphone = micSelect.value;
   currentSettings.whisperModel = modelSelect.value;
-  currentSettings.groqApiKey = groqKey.value;
+  currentSettings.transcriptionLanguage = languageSelect.value;
+  currentSettings.groqApiKey = groqKey.value.trim();
+  currentSettings.groqModel = groqModel.value.trim();
   await invoke("save_settings", { settings: currentSettings });
 }
 
-// Event listeners
+async function loadSettings() {
+  currentSettings = await invoke<Settings>("get_settings");
+  currentSettings.transcriptionLanguage = normalizeLanguageMode(currentSettings.transcriptionLanguage);
+
+  const mics = await invoke<MicDevice[]>("list_microphones");
+  micSelect.innerHTML = "";
+  mics.forEach((mic) => {
+    const option = document.createElement("option");
+    option.value = mic.name;
+    option.textContent = mic.name + (mic.is_default ? " (default)" : "");
+    micSelect.appendChild(option);
+  });
+
+  const preferredMicExists = mics.some((mic) => mic.name === currentSettings.microphone);
+  if (preferredMicExists) {
+    micSelect.value = currentSettings.microphone;
+  } else if (mics.length > 0) {
+    const fallbackMic = mics.find((mic) => mic.is_default)?.name ?? mics[0].name;
+    currentSettings.microphone = fallbackMic;
+    micSelect.value = fallbackMic;
+    await invoke("save_settings", { settings: currentSettings });
+  }
+
+  setEngine(currentSettings.engine);
+  modelSelect.value = currentSettings.whisperModel;
+  languageSelect.value = currentSettings.transcriptionLanguage;
+  await checkModelStatus();
+  groqKey.value = currentSettings.groqApiKey;
+  groqModel.value = currentSettings.groqModel;
+  setRecordingMode(currentSettings.recordingMode);
+  hotkeyText.textContent = formatHotkeyLabel(currentSettings.hotkey);
+  setHotkeyPreview(null);
+  const recordingState = await invoke<string>("get_recording_state");
+  setStatus(recordingState);
+}
+
+async function testGroqConnection() {
+  groqTestBtn.disabled = true;
+  currentSettings.groqApiKey = groqKey.value.trim();
+  currentSettings.groqModel = groqModel.value.trim();
+  setInlineStatus(groqTestStatus, "Checking Groq connection...");
+
+  try {
+    await saveSettings();
+    const result = await invoke<string>("test_groq_connection", {
+      apiKey: currentSettings.groqApiKey,
+      model: currentSettings.groqModel,
+    });
+    setInlineStatus(groqTestStatus, result, "success");
+  } catch (error) {
+    setInlineStatus(groqTestStatus, String(error), "error");
+  } finally {
+    groqTestBtn.disabled = false;
+  }
+}
+
+async function confirmHotkeyChange() {
+  if (!pendingHotkey) return;
+
+  const previousHotkey = currentSettings.hotkey;
+  currentSettings.hotkey = pendingHotkey;
+  hotkeyConfirmBtn.disabled = true;
+  setInlineStatus(hotkeyCaptureHint, "Saving shortcut...");
+
+  try {
+    await saveSettings();
+    hotkeyText.textContent = formatHotkeyLabel(currentSettings.hotkey);
+    stopHotkeyCapture();
+    hotkeyCapturePanel.classList.add("hidden");
+    setHotkeyPreview(null, "Shortcut updated successfully.", "success");
+  } catch (error) {
+    currentSettings.hotkey = previousHotkey;
+    pendingHotkey = null;
+    hotkeyConfirmBtn.disabled = true;
+    setHotkeyPreview(null, String(error), "error");
+  }
+}
+
+navItems.forEach((item) => {
+  item.addEventListener("click", () => {
+    const target = item.getAttribute("data-section");
+    navItems.forEach((navItem) => navItem.classList.remove("active"));
+    sections.forEach((section) => section.classList.remove("active"));
+    item.classList.add("active");
+    document.getElementById(`section-${target}`)?.classList.add("active");
+  });
+});
+
+titlebar.addEventListener("mousedown", (event) => {
+  if ((event.target as HTMLElement).closest("button, select, input, a, .nav-item")) return;
+  appWindow.startDragging();
+});
+
+sidebar.addEventListener("mousedown", (event) => {
+  if ((event.target as HTMLElement).closest("button, select, input, a, .nav-item")) return;
+  appWindow.startDragging();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (!isCapturingHotkey) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (event.key === "Escape") {
+    cancelHotkeyCapture();
+    return;
+  }
+
+  if (modifierCodes.has(event.code)) {
+    const modifierLabel = getModifierLabel(event.code);
+    if (modifierLabel) activeModifiers.add(modifierLabel);
+    const preview = [...activeModifiers].join(" + ");
+    hotkeyPreview.textContent = preview || "No shortcut captured yet";
+    hotkeyPreview.classList.toggle("hotkey-empty", preview.length === 0);
+    setInlineStatus(hotkeyCaptureHint, "Keep holding the modifier and press one more key.");
+    return;
+  }
+
+  const shortcut = buildShortcutFromEvent(event);
+  if (!shortcut) {
+    setHotkeyPreview(null, "Use at least one modifier key with your shortcut.", "error");
+    return;
+  }
+
+  pendingHotkey = shortcut;
+  stopHotkeyCapture();
+  hotkeyConfirmBtn.disabled = false;
+  setHotkeyPreview(shortcut, "Shortcut captured. Click Confirm to apply it.", "success");
+});
+
+document.addEventListener("keyup", (event) => {
+  if (!isCapturingHotkey) return;
+
+  if (modifierCodes.has(event.code)) {
+    const modifierLabel = getModifierLabel(event.code);
+    if (modifierLabel) activeModifiers.delete(modifierLabel);
+
+    if (!pendingHotkey) {
+      const preview = [...activeModifiers].join(" + ");
+      hotkeyPreview.textContent = preview || "No shortcut captured yet";
+      hotkeyPreview.classList.toggle("hotkey-empty", preview.length === 0);
+    }
+  }
+});
+
 engineLocal.addEventListener("click", () => {
   setEngine("local");
-  saveSettings();
+  void saveSettings();
 });
 
 engineCloud.addEventListener("click", () => {
   setEngine("cloud");
-  saveSettings();
+  void saveSettings();
 });
 
-micSelect.addEventListener("change", () => saveSettings());
+micSelect.addEventListener("change", () => {
+  void saveSettings();
+});
 
 modelSelect.addEventListener("change", async () => {
   await checkModelStatus();
-  saveSettings();
+  await saveSettings();
+});
+
+languageSelect.addEventListener("change", () => {
+  void saveSettings();
 });
 
 downloadBtn.addEventListener("click", async () => {
-  (downloadBtn as HTMLButtonElement).disabled = true;
+  downloadBtn.disabled = true;
   downloadProgress.classList.remove("hidden");
   progressFill.style.width = "0%";
 
   try {
     await invoke("download_model", { modelSize: modelSelect.value });
     downloadBtn.textContent = "\u2713";
-  } catch (e) {
+  } catch (error) {
     downloadBtn.textContent = "Retry";
-    (downloadBtn as HTMLButtonElement).disabled = false;
-    console.error("Download failed:", e);
+    downloadBtn.disabled = false;
+    console.error("Download failed:", error);
   }
+
   downloadProgress.classList.add("hidden");
 });
 
-groqKey.addEventListener("change", () => saveSettings());
+groqKey.addEventListener("change", () => {
+  setInlineStatus(groqTestStatus, "Saved API key locally. Use Test Connection to verify it.");
+  void saveSettings();
+});
+
+groqModel.addEventListener("change", () => {
+  setInlineStatus(groqTestStatus, "Saved model id locally. Use Test Connection to verify it.");
+  void saveSettings();
+});
+
+groqTestBtn.addEventListener("click", () => {
+  void testGroqConnection();
+});
 
 modeToggle.addEventListener("click", () => {
   setRecordingMode("toggle");
-  saveSettings();
+  void saveSettings();
 });
 
 modePtt.addEventListener("click", () => {
   setRecordingMode("push-to-talk");
-  saveSettings();
+  void saveSettings();
 });
 
-// Listen for recording state changes
+hotkeyChangeBtn.addEventListener("click", () => {
+  beginHotkeyCapture();
+});
+
+hotkeyConfirmBtn.addEventListener("click", () => {
+  void confirmHotkeyChange();
+});
+
+hotkeyCancelBtn.addEventListener("click", () => {
+  cancelHotkeyCapture();
+});
+
 listen<string>("recording-state", (event) => {
-  const state = event.payload;
-  statusDot.className = "";
-  if (state === "Recording") {
-    statusDot.classList.add("recording");
-    statusText.textContent = "Recording...";
-  } else if (state === "Transcribing") {
-    statusDot.classList.add("transcribing");
-    statusText.textContent = "Transcribing...";
-  } else {
-    statusDot.classList.add("ready");
-    statusText.textContent = "Ready";
-  }
+  setStatus(event.payload);
 });
 
-// Listen for download progress
+listen<number>("audio-level", (event) => {
+  setTitlebarMeterLevel(event.payload);
+});
+
 listen<DownloadProgress>("download-progress", (event) => {
   const { percent } = event.payload;
   progressFill.style.width = `${percent}%`;
 });
 
-// Initialize
-loadSettings();
+loadSettings().catch((error) => {
+  console.error("Failed to initialize settings UI:", error);
+  setStatus("Ready");
+});

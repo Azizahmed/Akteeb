@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 use crate::audio::AudioRecorder;
 use crate::cleanup::cleanup_text;
@@ -14,18 +14,6 @@ pub enum RecordingState {
     Ready,
     Recording,
     Transcribing,
-}
-
-fn update_overlay(app: &AppHandle, state: &RecordingState) {
-    if let Some(overlay) = app.get_webview_window("overlay") {
-        let class = match state {
-            RecordingState::Ready => "mic",
-            RecordingState::Recording => "mic recording",
-            RecordingState::Transcribing => "mic transcribing",
-        };
-        let js = format!("document.getElementById('mic').className = '{}';", class);
-        let _ = overlay.eval(&js);
-    }
 }
 
 pub struct Recorder {
@@ -52,11 +40,10 @@ impl Recorder {
         }
 
         let mut recorder = self.audio_recorder.lock().unwrap();
-        recorder.start(mic_name)?;
+        recorder.start(app, mic_name)?;
 
         *state = RecordingState::Recording;
         let _ = app.emit("recording-state", RecordingState::Recording);
-        update_overlay(app, &RecordingState::Recording);
         Ok(())
     }
 
@@ -73,8 +60,8 @@ impl Recorder {
                 return Err("Not currently recording".to_string());
             }
             *state = RecordingState::Transcribing;
+            let _ = app.emit("audio-level", 0.0_f32);
             let _ = app.emit("recording-state", RecordingState::Transcribing);
-            update_overlay(app, &RecordingState::Transcribing);
         }
 
         let temp_path = app_dir.join("temp_recording.wav");
@@ -89,10 +76,22 @@ impl Recorder {
         let raw_text = match settings.engine.as_str() {
             "local" => {
                 let model_path = app_dir.join(transcribe_local::model_filename(&settings.whisper_model));
-                transcribe_local::transcribe_local(app, &model_path, &temp_path).await?
+                transcribe_local::transcribe_local(
+                    app,
+                    &model_path,
+                    &temp_path,
+                    &settings.transcription_language,
+                )
+                .await?
             }
             "cloud" => {
-                transcribe_groq::transcribe_groq(&settings.groq_api_key, &temp_path).await?
+                transcribe_groq::transcribe_groq(
+                    &settings.groq_api_key,
+                    &settings.groq_model,
+                    &settings.transcription_language,
+                    &temp_path,
+                )
+                .await?
             }
             _ => return Err(format!("Unknown engine: {}", settings.engine)),
         };
@@ -112,8 +111,8 @@ impl Recorder {
         {
             let mut state = self.state.lock().unwrap();
             *state = RecordingState::Ready;
+            let _ = app.emit("audio-level", 0.0_f32);
             let _ = app.emit("recording-state", RecordingState::Ready);
-            update_overlay(app, &RecordingState::Ready);
         }
 
         Ok(cleaned)

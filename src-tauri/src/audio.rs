@@ -1,7 +1,9 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use hound::{WavSpec, WavWriter};
+use tauri::{AppHandle, Emitter};
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MicDevice {
@@ -54,7 +56,7 @@ impl AudioRecorder {
         }
     }
 
-    pub fn start(&mut self, mic_name: &str) -> Result<(), String> {
+    pub fn start(&mut self, app: &AppHandle, mic_name: &str) -> Result<(), String> {
         // Clear any leftover samples from previous recording
         self.samples.lock().unwrap().clear();
 
@@ -90,12 +92,32 @@ impl AudioRecorder {
         };
 
         let samples = self.samples.clone();
+        let meter_state = Arc::new(Mutex::new((0.0_f32, Instant::now())));
+        let meter = meter_state.clone();
+        let app_handle = app.clone();
         let stream = device
             .build_input_stream(
                 &config,
                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
                     let mut buf = samples.lock().unwrap();
                     buf.extend_from_slice(data);
+
+                    if data.is_empty() {
+                        return;
+                    }
+
+                    let rms = (data.iter().map(|sample| sample * sample).sum::<f32>()
+                        / data.len() as f32)
+                        .sqrt();
+                    let normalized = (rms * 10.0).clamp(0.0, 1.0);
+
+                    let mut meter = meter.lock().unwrap();
+                    meter.0 = meter.0 * 0.72 + normalized * 0.28;
+
+                    if meter.1.elapsed() >= Duration::from_millis(33) {
+                        let _ = app_handle.emit("audio-level", meter.0);
+                        meter.1 = Instant::now();
+                    }
                 },
                 |err| {
                     eprintln!("[Typr] Audio stream error: {}", err);
@@ -106,6 +128,7 @@ impl AudioRecorder {
 
         stream.play().map_err(|e| e.to_string())?;
         self.stream = Some(SendStream(stream));
+        let _ = app.emit("audio-level", 0.0_f32);
         println!("[Typr] Audio recording started");
         Ok(())
     }
