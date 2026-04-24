@@ -1,8 +1,8 @@
-# Typr -- Local Dictation App
+# Rawi -- Local Dictation App
 
 ## Overview
 
-Typr is a minimal, cross-platform (macOS + Windows) dictation app built with Tauri. It captures audio via a global hotkey, transcribes it using either a local whisper.cpp sidecar or Groq's cloud Whisper API, applies basic text cleanup, and auto-pastes the result into the currently focused application.
+Rawi is a minimal, cross-platform (macOS + Windows) dictation app built with Tauri. It captures audio via a global hotkey, transcribes it using either a local whisper.cpp sidecar or Groq's cloud Whisper API, applies basic text cleanup, and auto-pastes the result into the currently focused application.
 
 Personal-use tool. No accounts, no cloud sync, no history.
 
@@ -125,8 +125,8 @@ Single-page layout built with Vite + vanilla TypeScript.
 ## Settings Storage
 
 JSON file stored in the Tauri app data directory (platform-specific):
-- macOS: `~/Library/Application Support/com.typr.app/config.json`
-- Windows: `%APPDATA%/com.typr.app/config.json`
+- macOS: `~/Library/Application Support/com.rawi.app/config.json`
+- Windows: `%APPDATA%/com.rawi.app/config.json`
 
 ```json
 {

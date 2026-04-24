@@ -6,20 +6,22 @@ use std::sync::Mutex;
 use tauri::menu::MenuBuilder;
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, State, WindowEvent};
+use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
-use typr_lib::audio;
-use typr_lib::downloader;
-use typr_lib::recorder::{Recorder, RecordingState};
-use typr_lib::settings::Settings;
-use typr_lib::transcribe_groq;
-use typr_lib::transcribe_local;
+use rawi_lib::audio;
+use rawi_lib::downloader;
+use rawi_lib::recorder::{Recorder, RecordingState};
+use rawi_lib::settings::Settings;
+use rawi_lib::transcribe_groq;
+use rawi_lib::transcribe_local;
 
 struct AppState {
     recorder: Recorder,
     settings: Mutex<Settings>,
     app_dir: PathBuf,
     is_quitting: AtomicBool,
+    shortcut_is_down: AtomicBool,
 }
 
 const MAIN_WINDOW_LABEL: &str = "main";
@@ -29,7 +31,7 @@ const TRAY_QUIT_ID: &str = "tray_quit";
 fn get_app_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("com.typr.app")
+        .join("com.rawi.app")
 }
 
 #[tauri::command]
@@ -49,9 +51,21 @@ fn save_settings(
         update_global_shortcut(&app, &previous_settings.hotkey, &settings.hotkey)?;
     }
 
+    if previous_settings.launch_at_startup != settings.launch_at_startup {
+        if let Err(error) = set_launch_at_startup(&app, settings.launch_at_startup) {
+            if previous_settings.hotkey != settings.hotkey {
+                let _ = update_global_shortcut(&app, &settings.hotkey, &previous_settings.hotkey);
+            }
+            return Err(error);
+        }
+    }
+
     if let Err(error) = settings.save(&state.app_dir) {
         if previous_settings.hotkey != settings.hotkey {
             let _ = update_global_shortcut(&app, &settings.hotkey, &previous_settings.hotkey);
+        }
+        if previous_settings.launch_at_startup != settings.launch_at_startup {
+            let _ = set_launch_at_startup(&app, previous_settings.launch_at_startup);
         }
         return Err(error);
     }
@@ -102,10 +116,7 @@ async fn test_groq_connection(api_key: String, model: String) -> Result<String, 
 }
 
 /// Shared logic for toggle recording, used by both the Tauri command and hotkey handler.
-async fn do_toggle_recording(
-    app: &tauri::AppHandle,
-    state: &AppState,
-) -> Result<String, String> {
+async fn do_toggle_recording(app: &tauri::AppHandle, state: &AppState) -> Result<String, String> {
     let current_state = state.recorder.get_state();
     match current_state {
         RecordingState::Ready => {
@@ -121,9 +132,7 @@ async fn do_toggle_recording(
                 .await?;
             Ok(result)
         }
-        RecordingState::Transcribing => {
-            Err("Currently transcribing, please wait".to_string())
-        }
+        RecordingState::Transcribing => Err("Currently transcribing, please wait".to_string()),
     }
 }
 
@@ -136,20 +145,26 @@ fn handle_shortcut_event(app: tauri::AppHandle, event_state: ShortcutState) {
 
     match event_state {
         ShortcutState::Pressed => {
+            let state = app.state::<AppState>();
+            let was_pressed = state.shortcut_is_down.swap(true, Ordering::AcqRel);
+            if was_pressed {
+                return;
+            }
+
             tauri::async_runtime::spawn(async move {
                 let state = app.state::<AppState>();
                 match mode.as_str() {
                     "toggle" => match do_toggle_recording(&app, state.inner()).await {
-                        Ok(result) => println!("[Typr] Toggle result: {}", result),
-                        Err(e) => eprintln!("[Typr] Toggle error: {}", e),
+                        Ok(result) => println!("[Rawi] Toggle result: {}", result),
+                        Err(e) => eprintln!("[Rawi] Toggle error: {}", e),
                     },
                     "push-to-talk" => {
                         let current = state.recorder.get_state();
                         if current == RecordingState::Ready {
                             let mic = state.settings.lock().unwrap().microphone.clone();
                             match state.recorder.start_recording(&app, &mic) {
-                                Ok(_) => println!("[Typr] Recording started"),
-                                Err(e) => eprintln!("[Typr] Start recording error: {}", e),
+                                Ok(_) => println!("[Rawi] Recording started"),
+                                Err(e) => eprintln!("[Rawi] Start recording error: {}", e),
                             }
                         }
                     }
@@ -158,6 +173,12 @@ fn handle_shortcut_event(app: tauri::AppHandle, event_state: ShortcutState) {
             });
         }
         ShortcutState::Released => {
+            let state = app.state::<AppState>();
+            let was_pressed = state.shortcut_is_down.swap(false, Ordering::AcqRel);
+            if !was_pressed {
+                return;
+            }
+
             if mode == "push-to-talk" {
                 tauri::async_runtime::spawn(async move {
                     let state = app.state::<AppState>();
@@ -169,8 +190,8 @@ fn handle_shortcut_event(app: tauri::AppHandle, event_state: ShortcutState) {
                             .stop_and_transcribe(&app, &settings, &state.app_dir)
                             .await
                         {
-                            Ok(result) => println!("[Typr] Transcription: {}", result),
-                            Err(e) => eprintln!("[Typr] Transcription error: {}", e),
+                            Ok(result) => println!("[Rawi] Transcription: {}", result),
+                            Err(e) => eprintln!("[Rawi] Transcription error: {}", e),
                         }
                     }
                 });
@@ -183,7 +204,10 @@ fn register_global_shortcut(app: &tauri::AppHandle, hotkey: &str) -> Result<(), 
     let handle = app.clone();
     app.global_shortcut()
         .on_shortcut(hotkey, move |_app, shortcut, event| {
-            println!("[Typr] Hotkey event: {:?} state={:?}", shortcut, event.state);
+            println!(
+                "[Rawi] Hotkey event: {:?} state={:?}",
+                shortcut, event.state
+            );
             handle_shortcut_event(handle.clone(), event.state);
         })
         .map_err(|e| format!("Failed to register global shortcut '{}': {}", hotkey, e))
@@ -198,9 +222,12 @@ fn update_global_shortcut(
         return Ok(());
     }
 
-    app.global_shortcut()
-        .unregister(old_hotkey)
-        .map_err(|e| format!("Failed to unregister previous hotkey '{}': {}", old_hotkey, e))?;
+    app.global_shortcut().unregister(old_hotkey).map_err(|e| {
+        format!(
+            "Failed to unregister previous hotkey '{}': {}",
+            old_hotkey, e
+        )
+    })?;
 
     if let Err(error) = register_global_shortcut(app, new_hotkey) {
         let _ = register_global_shortcut(app, old_hotkey);
@@ -208,6 +235,19 @@ fn update_global_shortcut(
     }
 
     Ok(())
+}
+
+fn set_launch_at_startup(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let autostart_manager = app.autolaunch();
+    if enabled {
+        autostart_manager
+            .enable()
+            .map_err(|e| format!("Failed to enable launch at startup: {}", e))
+    } else {
+        autostart_manager
+            .disable()
+            .map_err(|e| format!("Failed to disable launch at startup: {}", e))
+    }
 }
 
 fn show_main_window(app: &tauri::AppHandle) -> Result<(), String> {
@@ -229,15 +269,22 @@ fn main() {
     let app_dir = get_app_dir();
     let settings = Settings::load(&app_dir);
     let initial_hotkey = settings.hotkey.clone();
+    let launch_at_startup = settings.launch_at_startup;
+    let launched_at_startup = std::env::args().any(|arg| arg == "--startup");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--startup"]),
+        ))
         .manage(AppState {
             recorder: Recorder::new(),
             settings: Mutex::new(settings),
             app_dir,
             is_quitting: AtomicBool::new(false),
+            shortcut_is_down: AtomicBool::new(false),
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
@@ -264,32 +311,36 @@ fn main() {
 
                 // Closing the main window hides the app so it keeps running from the tray.
                 if let Err(error) = window.hide() {
-                    eprintln!("[Typr] Failed to hide main window: {}", error);
+                    eprintln!("[Rawi] Failed to hide main window: {}", error);
                 }
             }
         })
         .setup(move |app| {
-            println!("[Typr] Registering global shortcut: {}", initial_hotkey);
+            println!("[Rawi] Registering global shortcut: {}", initial_hotkey);
 
             match register_global_shortcut(&app.handle().clone(), initial_hotkey.as_str()) {
-                Ok(_) => println!("[Typr] Global shortcut registered successfully"),
-                Err(e) => eprintln!("[Typr] ERROR: Failed to register global shortcut: {}", e),
+                Ok(_) => println!("[Rawi] Global shortcut registered successfully"),
+                Err(e) => eprintln!("[Rawi] ERROR: Failed to register global shortcut: {}", e),
+            }
+
+            if let Err(error) = set_launch_at_startup(&app.handle().clone(), launch_at_startup) {
+                eprintln!("[Rawi] Failed to apply launch at startup setting: {}", error);
             }
 
             let tray_menu = MenuBuilder::new(app)
-                .text(TRAY_SHOW_ID, "Open Typr")
+                .text(TRAY_SHOW_ID, "Open Rawi")
                 .separator()
                 .text(TRAY_QUIT_ID, "Quit")
                 .build()?;
 
             let mut tray_builder = TrayIconBuilder::with_id("main-tray")
                 .menu(&tray_menu)
-                .tooltip("Typr")
+                .tooltip("Rawi")
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     TRAY_SHOW_ID => {
                         if let Err(error) = show_main_window(app) {
-                            eprintln!("[Typr] Failed to open from tray: {}", error);
+                            eprintln!("[Rawi] Failed to open from tray: {}", error);
                         }
                     }
                     TRAY_QUIT_ID => {
@@ -309,7 +360,7 @@ fn main() {
                         ..
                     } => {
                         if let Err(error) = show_main_window(tray.app_handle()) {
-                            eprintln!("[Typr] Failed to show window from tray click: {}", error);
+                            eprintln!("[Rawi] Failed to show window from tray click: {}", error);
                         }
                     }
                     _ => {}
@@ -320,6 +371,14 @@ fn main() {
             }
 
             tray_builder.build(app)?;
+
+            if launched_at_startup {
+                if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                    if let Err(error) = window.hide() {
+                        eprintln!("[Rawi] Failed to hide startup window: {}", error);
+                    }
+                }
+            }
 
             Ok(())
         })

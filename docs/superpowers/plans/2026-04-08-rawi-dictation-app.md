@@ -1,4 +1,4 @@
-# Typr Dictation App Implementation Plan
+# Rawi Dictation App Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -13,7 +13,7 @@
 ## File Structure
 
 ```
-typr/
+rawi/
 ├── src-tauri/
 │   ├── src/
 │   │   ├── main.rs                  # Tauri app entry, plugin registration, command handlers
@@ -42,7 +42,7 @@ typr/
 └── docs/
     └── superpowers/
         └── specs/
-            └── 2026-04-08-typr-dictation-app-design.md
+            └── 2026-04-08-rawi-dictation-app-design.md
 ```
 
 ---
@@ -59,8 +59,8 @@ typr/
 
 ```bash
 cd /Users/albertbakhoj/Desktop
-rm -rf typr/implementationplan.md
-cd typr
+rm -rf rawi/implementationplan.md
+cd rawi
 npm create tauri-app@latest . -- --template vanilla-ts --manager npm
 ```
 
@@ -88,16 +88,16 @@ dirs = "6"
 - [ ] **Step 3: Add frontend dependencies**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 npm install @tauri-apps/api @tauri-apps/plugin-global-shortcut @tauri-apps/plugin-shell
 ```
 
 - [ ] **Step 4: Configure tauri.conf.json**
 
 Edit `src-tauri/tauri.conf.json`:
-- Set `productName` to `"Typr"`
-- Set `identifier` to `"com.typr.app"`
-- Set `windows[0].title` to `"Typr"`
+- Set `productName` to `"Rawi"`
+- Set `identifier` to `"com.rawi.app"`
+- Set `windows[0].title` to `"Rawi"`
 - Set `windows[0].width` to `400`
 - Set `windows[0].height` to `600`
 - Set `windows[0].resizable` to `false`
@@ -167,7 +167,7 @@ pub mod downloader;
 - [ ] **Step 7: Verify it builds**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 npm run tauri dev
 ```
 
@@ -182,7 +182,7 @@ Verify no errors.
 - [ ] **Step 8: Commit**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 git init
 echo "node_modules/\ntarget/\ndist/\nsrc-tauri/binaries/" > .gitignore
 git add .
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn test_save_and_load() {
-        let dir = temp_dir().join("typr_test_settings");
+        let dir = temp_dir().join("rawi_test_settings");
         let _ = fs::remove_dir_all(&dir);
 
         let mut settings = Settings::default();
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_load_missing_file_returns_default() {
-        let dir = temp_dir().join("typr_test_missing");
+        let dir = temp_dir().join("rawi_test_missing");
         let _ = fs::remove_dir_all(&dir);
         let settings = Settings::load(&dir);
         assert_eq!(settings, Settings::default());
@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn test_load_corrupt_json_returns_default() {
-        let dir = temp_dir().join("typr_test_corrupt");
+        let dir = temp_dir().join("rawi_test_corrupt");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("config.json"), "not json").unwrap();
@@ -312,7 +312,7 @@ mod tests {
 - [ ] **Step 2: Run tests to verify they pass**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr/src-tauri && cargo test settings
+cd /Users/albertbakhoj/Desktop/rawi/src-tauri && cargo test settings
 ```
 
 Expected: 4 tests pass.
@@ -320,7 +320,7 @@ Expected: 4 tests pass.
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 git add src-tauri/src/settings.rs
 git commit -m "feat: add settings module with load/save and tests"
 ```
@@ -437,7 +437,7 @@ mod tests {
 - [ ] **Step 2: Run tests to verify they pass**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr/src-tauri && cargo test cleanup
+cd /Users/albertbakhoj/Desktop/rawi/src-tauri && cargo test cleanup
 ```
 
 Expected: all 10 tests pass.
@@ -445,7 +445,7 @@ Expected: all 10 tests pass.
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 git add src-tauri/src/cleanup.rs
 git commit -m "feat: add text cleanup module with tests"
 ```
@@ -579,7 +579,7 @@ impl AudioRecorder {
 - [ ] **Step 2: Verify it compiles**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr/src-tauri && cargo check
+cd /Users/albertbakhoj/Desktop/rawi/src-tauri && cargo check
 ```
 
 Expected: compiles without errors. (Audio capture requires hardware so we skip unit tests -- tested via integration in Task 9.)
@@ -587,7 +587,7 @@ Expected: compiles without errors. (Audio capture requires hardware so we skip u
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 git add src-tauri/src/audio.rs
 git commit -m "feat: add audio capture module with mic enumeration"
 ```
@@ -758,7 +758,7 @@ mod tests {
 - [ ] **Step 3: Run tests**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr/src-tauri && cargo test transcribe_local
+cd /Users/albertbakhoj/Desktop/rawi/src-tauri && cargo test transcribe_local
 ```
 
 Expected: 3 tests pass.
@@ -766,7 +766,7 @@ Expected: 3 tests pass.
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 git add src-tauri/build.rs src-tauri/src/transcribe_local.rs
 git commit -m "feat: add whisper.cpp sidecar build script and local transcription"
 ```
@@ -848,7 +848,7 @@ mod tests {
 - [ ] **Step 2: Run tests**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr/src-tauri && cargo test transcribe_groq
+cd /Users/albertbakhoj/Desktop/rawi/src-tauri && cargo test transcribe_groq
 ```
 
 Expected: 1 test passes.
@@ -856,7 +856,7 @@ Expected: 1 test passes.
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 git add src-tauri/src/transcribe_groq.rs
 git commit -m "feat: add Groq cloud transcription module"
 ```
@@ -916,7 +916,7 @@ arboard = "3"
 - [ ] **Step 3: Verify it compiles**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr/src-tauri && cargo check
+cd /Users/albertbakhoj/Desktop/rawi/src-tauri && cargo check
 ```
 
 Expected: compiles without errors.
@@ -924,7 +924,7 @@ Expected: compiles without errors.
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 git add src-tauri/src/paste.rs src-tauri/Cargo.toml
 git commit -m "feat: add auto-paste module with clipboard + simulated Cmd/Ctrl+V"
 ```
@@ -1015,7 +1015,7 @@ futures-util = "0.3"
 - [ ] **Step 3: Verify it compiles**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr/src-tauri && cargo check
+cd /Users/albertbakhoj/Desktop/rawi/src-tauri && cargo check
 ```
 
 Expected: compiles without errors.
@@ -1023,7 +1023,7 @@ Expected: compiles without errors.
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 git add src-tauri/src/downloader.rs src-tauri/Cargo.toml
 git commit -m "feat: add model downloader with progress events"
 ```
@@ -1163,7 +1163,7 @@ mod tests {
 - [ ] **Step 2: Run tests**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr/src-tauri && cargo test recorder
+cd /Users/albertbakhoj/Desktop/rawi/src-tauri && cargo test recorder
 ```
 
 Expected: 1 test passes.
@@ -1171,7 +1171,7 @@ Expected: 1 test passes.
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 git add src-tauri/src/recorder.rs
 git commit -m "feat: add recording state machine orchestrator"
 ```
@@ -1211,11 +1211,11 @@ use std::sync::Mutex;
 use tauri::{Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
-use typr_lib::audio;
-use typr_lib::downloader;
-use typr_lib::recorder::{Recorder, RecordingState};
-use typr_lib::settings::Settings;
-use typr_lib::transcribe_local;
+use rawi_lib::audio;
+use rawi_lib::downloader;
+use rawi_lib::recorder::{Recorder, RecordingState};
+use rawi_lib::settings::Settings;
+use rawi_lib::transcribe_local;
 
 struct AppState {
     recorder: Recorder,
@@ -1226,7 +1226,7 @@ struct AppState {
 fn get_app_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("com.typr.app")
+        .join("com.rawi.app")
 }
 
 #[tauri::command]
@@ -1367,18 +1367,18 @@ fn main() {
 }
 ```
 
-Note: The crate name in `Cargo.toml` should be set. Check if it's `typr` or adjust imports. The default Tauri scaffold may name the lib crate differently. In `Cargo.toml`:
+Note: The crate name in `Cargo.toml` should be set. Check if it's `rawi` or adjust imports. The default Tauri scaffold may name the lib crate differently. In `Cargo.toml`:
 
 ```toml
 [lib]
-name = "typr_lib"
+name = "rawi_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 ```
 
 - [ ] **Step 3: Verify it compiles**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr/src-tauri && cargo check
+cd /Users/albertbakhoj/Desktop/rawi/src-tauri && cargo check
 ```
 
 Expected: compiles without errors. Fix any import issues.
@@ -1386,7 +1386,7 @@ Expected: compiles without errors. Fix any import issues.
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 git add src-tauri/src/main.rs src-tauri/src/lib.rs src-tauri/Cargo.toml
 git commit -m "feat: wire up Tauri commands and global hotkey in main.rs"
 ```
@@ -1410,7 +1410,7 @@ Replace `src/index.html` with:
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Typr</title>
+    <title>Rawi</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
@@ -1891,7 +1891,7 @@ kbd {
 - [ ] **Step 4: Verify the frontend builds**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr && npm run build
+cd /Users/albertbakhoj/Desktop/rawi && npm run build
 ```
 
 Expected: Vite builds without errors.
@@ -1899,7 +1899,7 @@ Expected: Vite builds without errors.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 git add src/index.html src/main.ts src/style.css
 git commit -m "feat: implement single-page settings UI with status indicator"
 ```
@@ -1914,7 +1914,7 @@ git commit -m "feat: implement single-page settings UI with status indicator"
 - [ ] **Step 1: Run full build**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr && npm run tauri build -- --debug
+cd /Users/albertbakhoj/Desktop/rawi && npm run tauri build -- --debug
 ```
 
 Expected: builds successfully, creates a debug binary.
@@ -1922,7 +1922,7 @@ Expected: builds successfully, creates a debug binary.
 - [ ] **Step 2: Run Rust tests**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr/src-tauri && cargo test
+cd /Users/albertbakhoj/Desktop/rawi/src-tauri && cargo test
 ```
 
 Expected: all unit tests pass (settings, cleanup, transcribe_local, recorder).
@@ -1932,7 +1932,7 @@ Expected: all unit tests pass (settings, cleanup, transcribe_local, recorder).
 Launch the debug build:
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr && npm run tauri dev
+cd /Users/albertbakhoj/Desktop/rawi && npm run tauri dev
 ```
 
 Verify:
@@ -1945,7 +1945,7 @@ Verify:
 - [ ] **Step 4: Commit any fixes**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 git add -A
 git commit -m "fix: integration fixes from smoke test"
 ```
@@ -1965,14 +1965,14 @@ git commit -m "fix: integration fixes from smoke test"
 Delete any default Tauri/Vite template files that are no longer needed (e.g., default `assets/`, example code).
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 rm -f src/assets/* public/*
 ```
 
 - [ ] **Step 2: Verify final build**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr && npm run tauri dev
+cd /Users/albertbakhoj/Desktop/rawi && npm run tauri dev
 ```
 
 Verify everything still works after cleanup.
@@ -1980,7 +1980,7 @@ Verify everything still works after cleanup.
 - [ ] **Step 3: Final commit**
 
 ```bash
-cd /Users/albertbakhoj/Desktop/typr
+cd /Users/albertbakhoj/Desktop/rawi
 git add -A
 git commit -m "chore: remove scaffold boilerplate, final cleanup"
 ```

@@ -4,10 +4,7 @@ pub fn cleanup_text(text: &str) -> String {
         return String::new();
     }
 
-    trimmed
-        .split_whitespace()
-        .collect::<Vec<&str>>()
-        .join(" ")
+    trimmed.split_whitespace().collect::<Vec<&str>>().join(" ")
 }
 
 #[cfg(test)]

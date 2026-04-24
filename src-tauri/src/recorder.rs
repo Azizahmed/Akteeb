@@ -6,8 +6,8 @@ use crate::audio::AudioRecorder;
 use crate::cleanup::cleanup_text;
 use crate::paste::paste_text;
 use crate::settings::Settings;
-use crate::transcribe_local;
 use crate::transcribe_groq;
+use crate::transcribe_local;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum RecordingState {
@@ -31,6 +31,15 @@ impl Recorder {
 
     pub fn get_state(&self) -> RecordingState {
         self.state.lock().unwrap().clone()
+    }
+
+    fn reset_to_ready(&self, app: &AppHandle) {
+        let mut state = self.state.lock().unwrap();
+        *state = RecordingState::Ready;
+        drop(state);
+
+        let _ = app.emit("audio-level", 0.0_f32);
+        let _ = app.emit("recording-state", RecordingState::Ready);
     }
 
     pub fn start_recording(&self, app: &AppHandle, mic_name: &str) -> Result<(), String> {
@@ -66,56 +75,59 @@ impl Recorder {
 
         let temp_path = app_dir.join("temp_recording.wav");
 
-        // Save audio
-        {
-            let mut recorder = self.audio_recorder.lock().unwrap();
-            recorder.stop_and_save(&temp_path)?;
+        let result = async {
+            // Save audio
+            {
+                let mut recorder = self.audio_recorder.lock().unwrap();
+                recorder.stop_and_save(&temp_path)?;
+            }
+
+            // Transcribe
+            let raw_text = match settings.engine.as_str() {
+                "local" => {
+                    let model_path =
+                        app_dir.join(transcribe_local::model_filename(&settings.whisper_model));
+                    transcribe_local::transcribe_local(
+                        app,
+                        &model_path,
+                        &temp_path,
+                        &settings.transcription_language,
+                    )
+                    .await?
+                }
+                "cloud" => {
+                    transcribe_groq::transcribe_groq(
+                        &settings.groq_api_key,
+                        &settings.groq_model,
+                        &settings.transcription_language,
+                        &temp_path,
+                    )
+                    .await?
+                }
+                _ => return Err(format!("Unknown engine: {}", settings.engine)),
+            };
+
+            // Clean up text
+            let cleaned = cleanup_text(&raw_text);
+
+            // Auto-paste
+            if !cleaned.is_empty() {
+                paste_text(&cleaned)?;
+            }
+
+            Ok(cleaned)
         }
+        .await;
 
-        // Transcribe
-        let raw_text = match settings.engine.as_str() {
-            "local" => {
-                let model_path = app_dir.join(transcribe_local::model_filename(&settings.whisper_model));
-                transcribe_local::transcribe_local(
-                    app,
-                    &model_path,
-                    &temp_path,
-                    &settings.transcription_language,
-                )
-                .await?
-            }
-            "cloud" => {
-                transcribe_groq::transcribe_groq(
-                    &settings.groq_api_key,
-                    &settings.groq_model,
-                    &settings.transcription_language,
-                    &temp_path,
-                )
-                .await?
-            }
-            _ => return Err(format!("Unknown engine: {}", settings.engine)),
-        };
-
-        // Cleanup temp file
         let _ = std::fs::remove_file(&temp_path);
+        self.reset_to_ready(app);
 
-        // Clean up text
-        let cleaned = cleanup_text(&raw_text);
-
-        // Auto-paste
-        if !cleaned.is_empty() {
-            paste_text(&cleaned)?;
+        if let Err(error) = &result {
+            eprintln!("[Rawi] Transcription pipeline failed: {}", error);
+            let _ = app.emit("recording-error", error.clone());
         }
 
-        // Reset state
-        {
-            let mut state = self.state.lock().unwrap();
-            *state = RecordingState::Ready;
-            let _ = app.emit("audio-level", 0.0_f32);
-            let _ = app.emit("recording-state", RecordingState::Ready);
-        }
-
-        Ok(cleaned)
+        result
     }
 }
 

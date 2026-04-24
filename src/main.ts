@@ -11,6 +11,7 @@ interface Settings {
   groqModel: string;
   recordingMode: string;
   hotkey: string;
+  launchAtStartup: boolean;
 }
 
 interface MicDevice {
@@ -40,6 +41,8 @@ const groqKey = document.getElementById("groq-key") as HTMLInputElement;
 const groqModel = document.getElementById("groq-model") as HTMLInputElement;
 const groqTestBtn = document.getElementById("groq-test-btn") as HTMLButtonElement;
 const groqTestStatus = document.getElementById("groq-test-status")!;
+const startupToggle = document.getElementById("startup-toggle") as HTMLInputElement;
+const startupStatus = document.getElementById("startup-status")!;
 const modeToggle = document.getElementById("mode-toggle")!;
 const modePtt = document.getElementById("mode-ptt")!;
 const hotkeyText = document.getElementById("hotkey-text")!;
@@ -55,6 +58,7 @@ const sections = document.querySelectorAll(".content-section");
 const titlebar = document.getElementById("titlebar")!;
 const titlebarMeter = document.getElementById("titlebar-meter")!;
 const sidebar = document.getElementById("sidebar")!;
+const shortcutPresetButtons = document.querySelectorAll<HTMLButtonElement>(".shortcut-preset");
 const appWindow = getCurrentWindow();
 
 let currentSettings: Settings;
@@ -85,9 +89,21 @@ function formatHotkeyLabel(hotkey: string) {
     .replace(/\+/g, " + ");
 }
 
+function formatRecordingError(message: string) {
+  const normalized = message.replace(/^Error:\s*/, "").trim();
+  if (normalized.length <= 64) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 61)}...`;
+}
+
 function setStatus(state: string) {
   currentRecordingState = state;
   statusDot.className = "";
+  statusText.classList.remove("status-error");
+  statusText.removeAttribute("title");
+
   if (state === "Recording") {
     statusDot.classList.add("recording");
     statusText.textContent = "Recording...";
@@ -107,6 +123,18 @@ function setStatus(state: string) {
 
   statusDot.classList.add("ready");
   statusText.textContent = "Ready";
+  titlebarMeter.style.setProperty("--level", "0.06");
+  titlebarMeter.classList.remove("recording", "transcribing", "speaking");
+  titlebarMeter.classList.add("idle");
+}
+
+function showRecordingError(message: string) {
+  currentRecordingState = "Ready";
+  statusDot.className = "";
+  statusDot.classList.add("error");
+  statusText.classList.add("status-error");
+  statusText.textContent = formatRecordingError(message);
+  statusText.title = message;
   titlebarMeter.style.setProperty("--level", "0.06");
   titlebarMeter.classList.remove("recording", "transcribing", "speaking");
   titlebarMeter.classList.add("idle");
@@ -150,6 +178,11 @@ function setRecordingMode(mode: string) {
   modePtt.classList.toggle("active", mode === "push-to-talk");
 }
 
+function setLaunchAtStartup(enabled: boolean) {
+  currentSettings.launchAtStartup = enabled;
+  startupToggle.checked = enabled;
+}
+
 function normalizeLanguageMode(language: string) {
   if (!language || language === "auto") {
     return "mixed";
@@ -162,6 +195,13 @@ function setHotkeyPreview(hotkey: string | null, message?: string, tone: "neutra
   hotkeyPreview.textContent = hotkey ? formatHotkeyLabel(hotkey) : "No shortcut captured yet";
   hotkeyPreview.classList.toggle("hotkey-empty", !hotkey);
   setInlineStatus(hotkeyCaptureHint, message ?? "Press a modifier plus one key, then confirm.", tone);
+}
+
+function setHotkeyDisplay(hotkey: string) {
+  hotkeyText.textContent = formatHotkeyLabel(hotkey);
+  shortcutPresetButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.hotkey === hotkey);
+  });
 }
 
 function beginHotkeyCapture() {
@@ -296,6 +336,7 @@ async function saveSettings() {
   currentSettings.transcriptionLanguage = languageSelect.value;
   currentSettings.groqApiKey = groqKey.value.trim();
   currentSettings.groqModel = groqModel.value.trim();
+  currentSettings.launchAtStartup = startupToggle.checked;
   await invoke("save_settings", { settings: currentSettings });
 }
 
@@ -329,7 +370,8 @@ async function loadSettings() {
   groqKey.value = currentSettings.groqApiKey;
   groqModel.value = currentSettings.groqModel;
   setRecordingMode(currentSettings.recordingMode);
-  hotkeyText.textContent = formatHotkeyLabel(currentSettings.hotkey);
+  setLaunchAtStartup(currentSettings.launchAtStartup);
+  setHotkeyDisplay(currentSettings.hotkey);
   setHotkeyPreview(null);
   const recordingState = await invoke<string>("get_recording_state");
   setStatus(recordingState);
@@ -365,7 +407,7 @@ async function confirmHotkeyChange() {
 
   try {
     await saveSettings();
-    hotkeyText.textContent = formatHotkeyLabel(currentSettings.hotkey);
+    setHotkeyDisplay(currentSettings.hotkey);
     stopHotkeyCapture();
     hotkeyCapturePanel.classList.add("hidden");
     setHotkeyPreview(null, "Shortcut updated successfully.", "success");
@@ -509,6 +551,40 @@ modePtt.addEventListener("click", () => {
   void saveSettings();
 });
 
+startupToggle.addEventListener("change", async () => {
+  const previousValue = currentSettings.launchAtStartup;
+  setLaunchAtStartup(startupToggle.checked);
+  setInlineStatus(startupStatus, startupToggle.checked ? "Startup enabled." : "Startup disabled.");
+
+  try {
+    await saveSettings();
+  } catch (error) {
+    setLaunchAtStartup(previousValue);
+    setInlineStatus(startupStatus, String(error), "error");
+  }
+});
+
+shortcutPresetButtons.forEach((button) => {
+  button.addEventListener("click", async () => {
+    const hotkey = button.dataset.hotkey;
+    if (!hotkey || hotkey === currentSettings.hotkey) return;
+
+    const previousHotkey = currentSettings.hotkey;
+    currentSettings.hotkey = hotkey;
+    setHotkeyDisplay(hotkey);
+    setHotkeyPreview(null, "Saving shortcut...");
+
+    try {
+      await saveSettings();
+      setHotkeyPreview(null, "Shortcut updated successfully.", "success");
+    } catch (error) {
+      currentSettings.hotkey = previousHotkey;
+      setHotkeyDisplay(previousHotkey);
+      setHotkeyPreview(null, String(error), "error");
+    }
+  });
+});
+
 hotkeyChangeBtn.addEventListener("click", () => {
   beginHotkeyCapture();
 });
@@ -523,6 +599,11 @@ hotkeyCancelBtn.addEventListener("click", () => {
 
 listen<string>("recording-state", (event) => {
   setStatus(event.payload);
+});
+
+listen<string>("recording-error", (event) => {
+  console.error("Recording error:", event.payload);
+  showRecordingError(event.payload);
 });
 
 listen<number>("audio-level", (event) => {

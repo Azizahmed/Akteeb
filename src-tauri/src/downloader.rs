@@ -9,11 +9,7 @@ pub struct DownloadProgress {
     pub percent: f64,
 }
 
-pub async fn download_model(
-    app: AppHandle,
-    url: &str,
-    dest: &PathBuf,
-) -> Result<(), String> {
+pub async fn download_model(app: AppHandle, url: &str, dest: &PathBuf) -> Result<(), String> {
     let client = reqwest::Client::new();
     let response = client
         .get(url)
@@ -22,7 +18,10 @@ pub async fn download_model(
         .map_err(|e| format!("Download request failed: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Download failed with status: {}", response.status()));
+        return Err(format!(
+            "Download failed with status: {}",
+            response.status()
+        ));
     }
 
     let total = response.content_length().unwrap_or(0);
@@ -49,11 +48,14 @@ pub async fn download_model(
             0.0
         };
 
-        let _ = app.emit("download-progress", DownloadProgress {
-            downloaded,
-            total,
-            percent,
-        });
+        let _ = app.emit(
+            "download-progress",
+            DownloadProgress {
+                downloaded,
+                total,
+                percent,
+            },
+        );
     }
 
     Ok(())

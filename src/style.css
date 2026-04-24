@@ -275,6 +275,11 @@ body {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
+#status-dot.error {
+  background: var(--red);
+  box-shadow: 0 0 6px rgba(229, 72, 77, 0.35);
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
@@ -284,6 +289,11 @@ body {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Navigation ─────────────────────────────────────── */
@@ -411,7 +421,7 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 32px;
+  gap: 28px;
   padding: 16px 0;
   border-bottom: 1px solid var(--border);
 }
@@ -425,8 +435,9 @@ body {
 }
 
 .setting-label {
-  flex-shrink: 0;
-  min-width: 200px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 360px;
 }
 
 .label-text {
@@ -442,10 +453,11 @@ body {
   font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .setting-control {
-  flex: 1;
+  flex: 0 0 min(280px, 42%);
   display: flex;
   justify-content: flex-end;
   min-width: 0;
@@ -457,7 +469,7 @@ select,
 input[type="password"],
 input[type="text"] {
   width: 100%;
-  max-width: 280px;
+  max-width: 100%;
   padding: 7px 12px;
   background: var(--surface);
   color: var(--text);
@@ -524,6 +536,66 @@ input[type="text"]::placeholder {
   background: var(--accent);
   color: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.shortcut-presets {
+  display: inline-flex;
+  align-self: flex-end;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+}
+
+.switch-control {
+  align-self: flex-end;
+  position: relative;
+  display: inline-flex;
+  width: 42px;
+  height: 24px;
+  cursor: pointer;
+}
+
+.switch-control input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch-track {
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.switch-track::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: transform var(--transition), background var(--transition);
+}
+
+.switch-control input:checked + .switch-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch-control input:checked + .switch-track::after {
+  transform: translateX(18px);
+  background: #fff;
+}
+
+.switch-control input:focus-visible + .switch-track {
+  box-shadow: 0 0 0 2px var(--accent-subtle);
 }
 
 /* ── Buttons ────────────────────────────────────────── */
@@ -593,7 +665,7 @@ input[type="text"]::placeholder {
   display: flex;
   gap: 8px;
   width: 100%;
-  max-width: 280px;
+  max-width: 100%;
 }
 
 .model-row select {
@@ -722,4 +794,32 @@ kbd {
 ::selection {
   background: var(--accent-subtle);
   color: var(--text);
+}
+
+@media (max-width: 760px) {
+  .content-section {
+    padding: 24px;
+  }
+
+  .setting-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .setting-label,
+  .setting-control {
+    max-width: none;
+    width: 100%;
+  }
+
+  .setting-control {
+    flex-basis: auto;
+    justify-content: flex-start;
+  }
+
+  .hotkey-summary,
+  .shortcut-presets,
+  .switch-control {
+    align-self: flex-start;
+  }
 }

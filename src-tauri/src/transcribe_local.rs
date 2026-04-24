@@ -12,7 +12,10 @@ pub async fn transcribe_local(
         return Err("Whisper model not found. Please download a model first.".to_string());
     }
 
-    println!("[Typr] Running whisper.cpp sidecar with model {:?}", model_path);
+    println!(
+        "[Rawi] Running whisper.cpp sidecar with model {:?}",
+        model_path
+    );
 
     let mut args = vec![
         "-m".to_string(),
@@ -42,7 +45,7 @@ pub async fn transcribe_local(
     }
 
     let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    println!("[Typr] Whisper output: {}", text);
+    println!("[Rawi] Whisper output: {}", text);
     Ok(text)
 }
 

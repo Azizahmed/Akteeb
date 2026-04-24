@@ -27,7 +27,10 @@ pub async fn test_groq_connection(api_key: &str, model: &str) -> Result<String, 
 
     let client = reqwest::Client::new();
     let response = client
-        .get(format!("https://api.groq.com/openai/v1/models/{}", model.trim()))
+        .get(format!(
+            "https://api.groq.com/openai/v1/models/{}",
+            model.trim()
+        ))
         .header("Authorization", format!("Bearer {}", api_key))
         .send()
         .await
@@ -56,8 +59,8 @@ pub async fn transcribe_groq(
 ) -> Result<String, String> {
     validate_groq_config(api_key, model)?;
 
-    let audio_bytes = std::fs::read(audio_path)
-        .map_err(|e| format!("Failed to read audio file: {}", e))?;
+    let audio_bytes =
+        std::fs::read(audio_path).map_err(|e| format!("Failed to read audio file: {}", e))?;
 
     let file_part = multipart::Part::bytes(audio_bytes)
         .file_name("audio.wav")
